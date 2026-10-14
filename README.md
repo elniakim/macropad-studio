@@ -41,6 +41,41 @@ a mapping between them. The web app talks to the keypad with [WebHID](https://de
 Chrome asks you to pick the keypad once, and the page can only reach the device you picked. Safari
 and Firefox don't support WebHID.
 
+### Linux: allow your browser to reach the keypad
+
+Linux only lets root open raw HID devices, so Chrome lists the keypad but can't write to it until
+you add a udev rule. `uaccess` grants access to whoever is logged in at the machine, rather than
+making the device writable by every account:
+
+```sh
+sudo tee /etc/udev/rules.d/70-macropad-studio.rules >/dev/null <<'RULES'
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1189", ATTRS{idProduct}=="8840|8842|8850", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="514c", ATTRS{idProduct}=="8851", TAG+="uaccess"
+RULES
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Then unplug and replug the keypad. macOS, Windows and ChromeOS need no setup.
+
+## What has been tested
+
+Tested on real hardware:
+
+- Keypad `1189:8840` with 12 keys and 2 knobs (the common AliExpress model)
+- macOS 26 on Apple silicon, with the Mac app (Python 3) and the web app (Chrome)
+- Uploads from both apps, confirmed by pressing the keys afterwards, and every agent action type
+
+Expected to work but **not tested**, because they rely on the original tool's protocol notes rather than
+hardware we have:
+
+- The other IDs (`1189:8842`, `1189:8850`, `514c:8851`)
+- Other layouts (3, 6 or 15 keys; 1, 3 or 4 knobs). The editor currently shows 12 keys + 2 knobs only
+- The web app on Windows, Linux and ChromeOS, and in Edge, Brave, Arc or Opera
+
+Keypads with a different protocol (often sold as "ch57x-2" or with only 3 keys and one knob) aren't
+supported. If yours works, or doesn't, please [open an issue](https://github.com/elniakim/macropad-studio/issues)
+with the output of `python macropad.py list`, or the name Chrome shows when you connect the keypad.
+
 ## Requirements (Mac app)
 
 - macOS (tested on macOS 26, Apple silicon) and Python 3.10+
@@ -101,21 +136,40 @@ Quartz event tap, swallows it so no app sees it, and performs the real action.
 
 ## Security
 
+### Mac app
+
 The editor can make your Mac run shell commands, so the local server is locked down:
 
 - It listens on `127.0.0.1` only and checks the `Host` and `Origin` headers, so other websites (and
   DNS-rebinding tricks) can't reach it.
 - Every API call must carry a random token stored in `state/token` (mode `0600`, inside a `0700`
   directory). Other user accounts, sandboxed apps and containers that can reach localhost still can't
-  drive it.
+  drive it. An empty or truncated token file is replaced, never treated as "no token".
 - Writes must be `application/json`, which forces a CORS preflight that is never approved; pages
   can't be framed (`frame-ancestors 'none'`).
 - Mappings are validated against a strict schema before they're saved, and everything the UI
-  renders is escaped.
+  renders is escaped. Request bodies are capped at 4 MB.
+- The agent passes "open" targets to `open` as arguments, never through a shell, and refuses ones that
+  would read as options (a leading `-`).
 
-What remains is the point of the feature: a mapping's shell actions run as you. Only use mappings you
-wrote or trust. The agent sees key events in order to catch its trigger chords, but only acts on —
+What remains is the point of the feature: a mapping's shell actions run as you. **Only use mappings you
+wrote or trust.** Importing a mapping that contains shell commands or "open" actions shows every one
+of them and asks before accepting it. The agent sees key events in order to catch its trigger chords, but only acts on —
 and only logs — those chords.
+
+### Web app
+
+- It's a static page with no backend: your mapping never leaves the browser, and the page can't run
+  anything on your computer. The worst a tampered mapping can do is set the keypad's keys.
+- WebHID only reaches the device you pick in Chrome's chooser, and the page only asks for the vendor
+  configuration interface of the supported keypads.
+- A strict Content Security Policy allows no inline or third-party scripts and no requests to other
+  sites; the page refuses to run inside a frame.
+- The GitHub Actions that deploy it are pinned to commit SHAs and run with the minimum permissions.
+
+Report security problems privately through
+[GitHub's security advisories](https://github.com/elniakim/macropad-studio/security/advisories/new)
+rather than in a public issue.
 
 ## How it works
 
@@ -135,7 +189,7 @@ ui/index.html ──JSON──▶ server.py ──compile──▶ macropad.py �
 |---|---|
 | `macropad.py` | Protocol encoder, expression parser, mapping schema and compiler, CLI |
 | `server.py` | Local web server and JSON API |
-| `ui/index.html` | The editor — one file, no build step. Local mode on `127.0.0.1`, WebHID mode anywhere else |
+| `ui/index.html`, `ui/app.js` | The editor, no build step. Local mode on `127.0.0.1`, WebHID mode anywhere else |
 | `ui/ch57x.js` | The encoder ported to JavaScript for the web app; tests check it matches `macropad.py` byte for byte |
 | `agent.py` | Runs agent actions when trigger chords arrive |
 | `state/` | Your draft, the last uploaded mapping and the API token (git-ignored) |

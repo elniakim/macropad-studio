@@ -106,6 +106,8 @@ def type_text(text: str):
 
 def open_target(target: str):
     target = os.path.expanduser(target.strip())
+    if not target or target.startswith("-"):
+        raise ValueError(f"refusing to open {target!r}")
     if "://" in target or target.startswith("/"):
         subprocess.Popen(["open", target])
     else:

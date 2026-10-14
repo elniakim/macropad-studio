@@ -302,3 +302,51 @@ def test_js_slot_errors_match_python(js_results):
     for i, (m, js) in enumerate(zip(PARITY_MAPPINGS, js_results["errors"])):
         py = _py(lambda: sorted(mp.slot_errors(mp.normalize_mapping(m))))
         assert js == py, i
+
+
+# --- security regressions ------------------------------------------------------
+
+
+@pytest.mark.parametrize("target", ["", "   ", "-a Terminal", "--args"])
+def test_open_targets_cannot_be_options(target):
+    with pytest.raises(ValueError):
+        mp.check_software(mp.normalize_action({"type": "open", "target": target}))
+    with pytest.raises(ValueError):
+        mp.check_software(mp.normalize_action({"type": "macro", "steps": [{"do": "open", "value": target}]}))
+
+
+def test_open_targets_allowed():
+    for target in ["Safari", "https://example.com", "~/Downloads", "/Applications/Notes.app"]:
+        mp.check_software(mp.normalize_action({"type": "open", "target": target}))
+
+
+@pytest.fixture
+def server_mod(tmp_path, monkeypatch):
+    server = pytest.importorskip("server")
+    monkeypatch.setattr(server, "STATE", tmp_path / "state")
+    monkeypatch.setattr(server, "TOKEN_FILE", tmp_path / "state" / "token")
+    return server
+
+
+@pytest.mark.parametrize("content", ["", "\n", "short"])
+def test_empty_or_short_token_file_is_replaced(server_mod, content):
+    server_mod.ensure_state()
+    server_mod.TOKEN_FILE.write_text(content)
+    token = server_mod.load_token()
+    assert len(token) >= 32 and server_mod.TOKEN_FILE.read_text() == token
+    assert server_mod.TOKEN_FILE.stat().st_mode & 0o777 == 0o600
+    assert server_mod.STATE.stat().st_mode & 0o777 == 0o700
+
+
+def test_loose_token_file_permissions_are_tightened(server_mod):
+    server_mod.ensure_state()
+    server_mod.TOKEN_FILE.write_text("x" * 43)
+    server_mod.TOKEN_FILE.chmod(0o644)
+    assert server_mod.load_token() == "x" * 43
+    assert server_mod.TOKEN_FILE.stat().st_mode & 0o777 == 0o600
+
+
+def test_recorded_pid_must_be_the_agent(server_mod):
+    import os
+    assert not server_mod.is_agent_pid(os.getpid())   # pytest, not agent.py
+    assert not server_mod.is_agent_pid(None) and not server_mod.is_agent_pid(-1)

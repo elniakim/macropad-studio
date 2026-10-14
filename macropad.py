@@ -598,11 +598,23 @@ def hardware_macro(action: dict) -> Macro:
     return macro
 
 
+def _check_open_target(target: str):
+    # `open` would read a leading "-" as one of its own options.
+    if not target.strip():
+        raise ValueError("choose something to open")
+    if target.strip().startswith("-"):
+        raise ValueError("an open target can't start with '-'")
+
+
 def check_software(action: dict):
     """Raise if the agent couldn't perform this action."""
+    if action["type"] == "open":
+        _check_open_target(action["target"])
     if action["type"] != "macro":
         return
     for st in action["steps"]:
+        if st["do"] == "open":
+            _check_open_target(st["value"])
         if st["do"] != "keys":
             continue
         accords = [a.strip().lower() for a in st["value"].split(",") if a.strip()]

@@ -28,6 +28,8 @@ AGENT_LOG = STATE / "agent.log"
 TOKEN_FILE = STATE / "token"
 UI_FILE = ROOT / "ui" / "index.html"
 UI_JS = ROOT / "ui" / "ch57x.js"
+APP_JS = ROOT / "ui" / "app.js"
+MAX_BODY = 4 * 1024 * 1024
 PORT = int(os.environ.get("MACROPAD_PORT", "8757"))
 
 STARTER = {
@@ -91,13 +93,18 @@ def load_token() -> str:
     127.0.0.1 still can't drive the API (which can run shell commands)."""
     ensure_state()
     try:
-        return TOKEN_FILE.read_text().strip()
+        token = TOKEN_FILE.read_text().strip()
+        if len(token) >= 32:  # an empty or truncated file must never mean "no auth"
+            TOKEN_FILE.chmod(0o600)
+            return token
+        TOKEN_FILE.unlink()
     except FileNotFoundError:
-        token = secrets.token_urlsafe(32)
-        fd = os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write(token)
-        return token
+        pass
+    token = secrets.token_urlsafe(32)
+    fd = os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(token)
+    return token
 
 
 TOKEN = ""
@@ -179,9 +186,19 @@ def start_agent():
         raise RuntimeError("the agent exited: " + tail(AGENT_LOG))
 
 
+def is_agent_pid(pid) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout
+    return any(part == "agent.py" or part.endswith("/agent.py") for part in cmd.split())
+
+
 def stop_agent():
     st = read_json(AGENT_STATUS) or {}
-    pid = agent_proc.pid if agent_proc and agent_proc.poll() is None else st.get("pid")
+    if agent_proc and agent_proc.poll() is None:
+        pid = agent_proc.pid
+    else:  # an agent started elsewhere: make sure the recorded PID is still that agent, not a reused PID
+        pid = st.get("pid") if agent_status()["running"] and is_agent_pid(st.get("pid")) else None
     if pid:
         try:
             os.kill(pid, signal.SIGTERM)
@@ -227,7 +244,7 @@ class Handler(BaseHTTPRequestHandler):
             ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
             if ctype != "application/json":
                 return 403
-        if not hmac.compare_digest(self.headers.get("X-Macropad-Token") or "", TOKEN):
+        if not TOKEN or not hmac.compare_digest(self.headers.get("X-Macropad-Token") or "", TOKEN):
             return 401
         return 0
 
@@ -245,6 +262,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def body(self):
         n = int(self.headers.get("Content-Length") or 0)
+        if not 0 <= n <= MAX_BODY:
+            raise ValueError("request body too large")
         return json.loads(self.rfile.read(n) or b"{}")
 
     def handle_method(self, write: bool, routes: dict):
@@ -265,7 +284,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.handle_method(False, {
-            "/": self.get_ui, "/index.html": self.get_ui, "/ch57x.js": self.get_js,
+            "/": self.get_ui, "/index.html": self.get_ui, "/ch57x.js": self.get_js, "/app.js": self.get_app_js,
             "/api/state": self.get_state, "/api/status": self.get_status, "/api/apps": self.get_apps,
         })
 
@@ -282,6 +301,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_ui(self):
         self.reply(200, UI_FILE.read_bytes(), "text/html; charset=utf-8")
+
+    def get_app_js(self):
+        self.reply(200, APP_JS.read_bytes(), "text/javascript; charset=utf-8")
 
     def get_js(self):
         self.reply(200, UI_JS.read_bytes(), "text/javascript; charset=utf-8")
