@@ -22,8 +22,9 @@ keypad, open the page in Chrome or Edge (macOS, Windows, Linux, ChromeOS) and up
   swap them, copy and paste slots, and set each layer's LED mode and colour.
 - **Key recorder** — press a shortcut on your keyboard and it's captured.
 - **Live key test** — press a key on the keypad and the editor lights up the slot that fired and
-  shows it in the toolbar. Key presses need the editor window in front; agent slots and media keys
-  (volume, playback — macOS handles those before the browser) show up while the Mac agent runs.
+  shows it in the toolbar. The Mac app reads what the keypad itself sends, so every knob detent, scroll
+  and mouse button shows up, counted (×3), and the Mac's own keyboard and mouse never do. Key presses
+  show up while the editor window is in front; the web app shows key presses only.
 - **Everything the hardware supports**: key sequences, media keys, mouse click/scroll/move/drag, and
   the original tool's expression syntax for power users.
 - **Agent actions** for what the hardware can't do (see below): type any Unicode text (emoji,
@@ -160,8 +161,12 @@ The editor can make your Mac run shell commands, so the local server is locked d
 What remains is the point of the feature: a mapping's shell actions run as you. **Only use mappings you
 wrote or trust.** Importing a mapping that contains shell commands or "open" actions shows every one
 of them and asks before accepting it. The agent sees key events in order to catch its trigger chords, but only acts on —
-and only logs — those chords. It also notes the last media key pressed (for example "volume up") so the
-editor can show it.
+and only logs — those chords.
+
+For the live key test, `server.py` opens the keypad's input interface in shared mode (the keypad keeps
+working) and keeps its last 200 signals in memory for the editor; nothing is written to disk, and no other
+device is read. This needs Input Monitoring permission for the app running `server.py`; without it the
+test falls back to key presses in the editor window.
 
 ### Web app
 
@@ -198,6 +203,7 @@ ui/index.html ──JSON──▶ server.py ──compile──▶ macropad.py �
 | `ui/index.html`, `ui/app.js` | The editor, no build step. Local mode on `127.0.0.1`, WebHID mode anywhere else |
 | `ui/ch57x.js` | The encoder ported to JavaScript for the web app; tests check it matches `macropad.py` byte for byte |
 | `agent.py` | Runs agent actions when trigger chords arrive |
+| `hidwatch.py` | Reads what the keypad sends (shared mode, IOKit) for the live key test |
 | `state/` | Your draft, the last uploaded mapping and the API token (git-ignored) |
 
 ## Development

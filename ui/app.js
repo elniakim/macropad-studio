@@ -872,7 +872,9 @@ function renderHit() {
 function showHit(layer, slot) {
   const l = S.uploaded?.layers?.[layer], a = l?.slots?.[slot];
   if (!a) return;
-  S.hit = { layer, slot, where: `${layerName(l, layer)} · ${slotTitle(slot)} · ${label(a)}` };
+  const again = S.hit?.layer === layer && S.hit?.slot === slot && performance.now() - S.hit.t < 1500;
+  const n = again ? S.hit.n + 1 : 1;
+  S.hit = { layer, slot, n, t: performance.now(), where: `${layerName(l, layer)} · ${slotTitle(slot)} · ${label(a)}${n > 1 ? ` ×${n}` : ""}` };
   renderHit();
   const st = $("#hitStatus");
   st.classList.add("fresh"); clearTimeout(hitFade); hitFade = setTimeout(() => st.classList.remove("fresh"), 3000);
@@ -880,7 +882,7 @@ function showHit(layer, slot) {
   if (el) { el.classList.remove("hit"); void el.offsetWidth; el.classList.add("hit"); }
 }
 window.addEventListener("keydown", e => {
-  if (activeRec || e.repeat || !S.uploaded || MOD_CODES[e.code]) return;
+  if (rawKeys || activeRec || e.repeat || !S.uploaded || MOD_CODES[e.code]) return;
   if (e.target.closest?.("input, textarea, select, [contenteditable]") || $("dialog[open]")) return;
   if (performance.now() < hitQuiet) return;
   const media = MEDIA_CODES[e.code], key = codeToKey(e.code);
@@ -904,7 +906,40 @@ function findHit(match) {
   showHit(hits[0][0], hits[0][1]);
   return hits[0][2];
 }
-const hitMedia = code => findHit(a => a.type === "media" && (CH57X.MEDIA[a.code] ?? a.code) === CH57X.MEDIA[code]);
+const mediaCode = c => typeof c === "number" ? c : CH57X.MEDIA[c] ?? (/^(0x)?[0-9a-f]+$/i.test(c) ? parseInt(c, c.startsWith("0x") ? 16 : 10) : null);
+const hitMedia = code => findHit(a => a.type === "media" && mediaCode(a.code) === mediaCode(code));
+
+// Mac app: server.py reads what the keypad itself sends (hidwatch.py), so every knob detent, scroll and
+// mouse button shows up even when this window isn't in front, and the Mac's own keyboard never does.
+let rawKeys = false;
+async function watchKeypad() {
+  let after = null;
+  for (;;) {
+    try {
+      const r = await api("GET", after === null ? "/api/events" : `/api/events?after=${after}`);
+      if (!r.watching && after !== null) return;  // no Input Monitoring permission: key presses still work in front
+      if (after !== null) r.events.forEach(rawHit);
+      after = r.seq;
+    } catch (e) {
+      if (e.message === "unauthorized") return;
+      await new Promise(res => setTimeout(res, 3000));
+    }
+  }
+}
+function rawHit(ev) {
+  const mouse = (a, ...acts) => a.type === "mouse" && acts.includes(a.action);
+  if (ev.kind === "media") hitMedia(ev.code);
+  else if (ev.kind === "wheel") findHit(a => mouse(a, "wheel") && Math.sign(num(a.delta)) === ev.delta);
+  else if (ev.kind === "button") findHit(a => mouse(a, "click", "drag") && (a.buttons || []).includes(ev.button));
+  else if (ev.kind === "move") findHit(a => mouse(a, "move", "drag") && num(ev.axis === "x" ? a.dx : a.dy) === ev.delta);
+  else if (ev.kind === "key") {
+    rawKeys = true;
+    if (performance.now() < hitQuiet) return;
+    const id = `${(ev.mods | (ev.mods >> 4)) & 0x0f}:${ev.code}`;
+    const a = findHit(a => a.type === "keys" && accordId(a.steps?.[0]) === id);
+    if (a) hitQuiet = performance.now() + 150 + (a.steps.length - 1) * (num(a.delay) + 40);
+  }
+}
 
 /* ---------- toolbar actions ---------- */
 $("#uploadBtn").onclick = async () => {
@@ -1003,13 +1038,10 @@ async function poll() {
     S.devices = r.devices; S.agent = r.agent;
     renderStatus();
     if (was !== S.agent.running && cur() && !DEV.has(cur().type) && !S.picking && !document.activeElement?.closest(".inspector")) renderInspector();
-    // Only events newer than the first poll count, so an old press isn't replayed when the page opens.
-    // macOS handles volume and playback keys before the page sees them; the agent reports those.
-    const last = S.agent.last, media = S.agent.media, first = S.seenAt === null;
-    if (first) S.seenAt = Math.max(num(last?.at), num(media?.at));
-    if (!first && last && num(last.at) > S.seenAt) showHit(last.layer, last.slot);
-    if (!first && media && num(media.at) > S.seenAt) hitMedia(media.code);
-    if (!first) S.seenAt = Math.max(S.seenAt, num(last?.at), num(media?.at));
+    // Only agent actions newer than the first poll count, so an old one isn't replayed when the page opens.
+    const last = S.agent.last;
+    if (S.seenAt !== null && last && num(last.at) > S.seenAt) showHit(last.layer, last.slot);
+    S.seenAt = Math.max(num(S.seenAt), num(last?.at));
   } catch { S.devices = []; renderStatus(); }
 }
 
@@ -1027,7 +1059,7 @@ async function poll() {
   Object.assign(S, { mapping: st.mapping, uploaded: st.uploaded, errors: st.errors, catalog: st.catalog });
   for (const l of S.mapping.layers) l.slots ??= {};
   if (st.warning) { $("#banner").textContent = st.warning; $("#banner").classList.add("on"); }
-  if (!WEB) (function loop() { setTimeout(async () => { await poll(); loop(); }, document.hidden ? 3000 : 500); })();
+  if (!WEB) { setInterval(poll, 1500); watchKeypad(); }
   const dl = document.createElement("datalist"); dl.id = "keyList";
   dl.innerHTML = [...S.catalog.keys, ...S.catalog.modifiers].map(k => `<option value="${esc(k)}">`).join("");
   document.body.append(dl);

@@ -350,3 +350,38 @@ def test_recorded_pid_must_be_the_agent(server_mod):
     import os
     assert not server_mod.is_agent_pid(os.getpid())   # pytest, not agent.py
     assert not server_mod.is_agent_pid(None) and not server_mod.is_agent_pid(-1)
+
+
+# --- hidwatch: decoding what the keypad sends ---------------------------------
+
+def test_hidwatch_decodes_knobs_buttons_and_keys():
+    import hidwatch
+    w = hidwatch.Watcher()
+    w.on_value(0x0C, 0xFFFFFFFF, 0xE9, 1)  # consumer array element: ignored, the usage element counts
+    w.on_value(0x0C, 0xE9, 1, 1)
+    w.on_value(0x0C, 0xE9, 0, 2)           # release
+    w.on_value(0x01, 0x38, -1, 3)
+    w.on_value(0x09, 0x03, 1, 4)
+    w.on_value(0x07, 0x06, 1, 5)           # c arrives before its modifier in the same report
+    w.on_value(0x07, 0xE3, 1, 5)           # left cmd
+    w.on_value(0x07, 0x06, 0, 6)           # release report
+    w.on_value(0x07, 0xE3, 0, 6)
+    w.on_value(0x07, 0x19, 1, 7)           # v, no modifier
+    w.flush()
+    kinds = [{k: v for k, v in e.items() if k not in ("seq", "at")} for e in w.events]
+    assert kinds == [
+        {"kind": "media", "code": 0xE9}, {"kind": "wheel", "delta": -1}, {"kind": "button", "button": "middle"},
+        {"kind": "key", "mods": 0x08, "code": 0x06}, {"kind": "key", "mods": 0, "code": 0x19},
+    ]
+
+
+def test_hidwatch_since_waits_and_resets():
+    import hidwatch
+    w = hidwatch.Watcher(keep=3)
+    assert w.since(0, 0.01) == (0, [])
+    for i in range(5):
+        w.push({"kind": "wheel", "delta": 1})
+    seq, events = w.since(0, 0.01)
+    assert seq == 5 and [e["seq"] for e in events] == [3, 4, 5]  # only the last `keep` are kept
+    assert w.since(5, 0.01) == (5, [])
+    assert [e["seq"] for e in w.since(99, 0.01)[1]] == [3, 4, 5]  # a stale cursor after a restart starts over

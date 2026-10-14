@@ -17,6 +17,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import hidwatch
 import macropad as mp
 
 ROOT = Path(__file__).resolve().parent
@@ -270,7 +271,7 @@ class Handler(BaseHTTPRequestHandler):
         refused = self.check(write)
         if refused:
             return self.reply(refused, {"error": "forbidden" if refused == 403 else "unauthorized"})
-        route = routes.get(self.path)
+        route = routes.get(self.path.split("?", 1)[0])
         if route is None:
             return self.reply(404, {"error": "not found"})
         try:
@@ -286,6 +287,7 @@ class Handler(BaseHTTPRequestHandler):
         self.handle_method(False, {
             "/": self.get_ui, "/index.html": self.get_ui, "/ch57x.js": self.get_js, "/app.js": self.get_app_js,
             "/api/state": self.get_state, "/api/status": self.get_status, "/api/apps": self.get_apps,
+            "/api/events": self.get_events,
         })
 
     def do_PUT(self):
@@ -315,6 +317,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_status(self):
         self.reply(200, {"devices": device_info(), "agent": agent_status()})
+
+    def get_events(self):
+        # Long poll: answers as soon as the keypad sends something, or after 15 s with nothing.
+        query = self.path.partition("?")[2]
+        after = next((p[6:] for p in query.split("&") if p.startswith("after=")), None)
+        # Without `after`, just report where the log is, so old presses aren't replayed.
+        seq, events = WATCH.since(int(after), 15) if after and after.isdigit() else (WATCH.seq, [])
+        self.reply(200, {"watching": WATCH.running, "seq": seq, "events": events})
 
     def get_apps(self):
         self.reply(200, list_apps())
@@ -358,9 +368,13 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, agent_status())
 
 
+WATCH = hidwatch.Watcher()
+
+
 def main():
     global TOKEN
     TOKEN = load_token()
+    WATCH.start()
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://127.0.0.1:{PORT}/#token={TOKEN}"
     print(f"Macropad Studio: {url}\n(Ctrl-C to stop)")

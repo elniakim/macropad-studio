@@ -20,7 +20,6 @@ import threading
 import time
 from pathlib import Path
 
-import AppKit
 import Quartz as Q
 
 import macropad as mp
@@ -30,9 +29,6 @@ STATE = Path(os.environ.get("MACROPAD_STATE", ROOT / "state"))
 DEVICE_FILE = STATE / "device.json"
 STATUS_FILE = STATE / "agent.json"
 MAGIC = 0x4D50_4144  # tags events we post ourselves so the tap ignores them
-SYSTEM_DEFINED = 14  # NSEventTypeSystemDefined: how macOS delivers volume, playback and brightness keys
-NX_MEDIA = {0: "volumeup", 1: "volumedown", 2: "screenbrightnessup", 3: "screenbrightnessdown", 7: "mute",
-            16: "play", 17: "next", 18: "previous"}
 
 MAC_KEYCODES = mp.MAC_KEYCODES
 HID_TO_NAME = mp.HID_TO_NAME
@@ -161,7 +157,6 @@ class Agent:
         self.mtime = 0.0
         self.swallow_up: set[int] = set()
         self.last = None
-        self.media = None
         self.busy = threading.Lock()
         self.reload()
 
@@ -188,7 +183,7 @@ class Agent:
         tmp = STATUS_FILE.with_name(f".agent.{os.getpid()}.tmp")
         tmp.write_text(json.dumps({
             "pid": os.getpid(), "heartbeat": time.time(),
-            "actions": len(self.triggers), "last": self.last, "media": self.media,
+            "actions": len(self.triggers), "last": self.last,
         }))
         tmp.replace(STATUS_FILE)  # atomic, so the server never reads half a file
 
@@ -207,26 +202,12 @@ class Agent:
 
         threading.Thread(target=work, daemon=True).start()
 
-    def note_media(self, event):
-        # Lets the editor show which media key or knob was just used; nothing else is recorded.
-        ns = AppKit.NSEvent.eventWithCGEvent_(event)
-        if ns is None or ns.subtype() != 8:
-            return
-        data = ns.data1()
-        code = NX_MEDIA.get((data >> 16) & 0xFFFF)
-        if code and (data >> 8) & 0xFF == 0x0A and not data & 1:  # key down, not auto-repeat
-            self.media = {"code": code, "at": time.time()}
-            self.write_status()
-
     def callback(self, proxy, etype, event, refcon):
         if etype in (Q.kCGEventTapDisabledByTimeout, Q.kCGEventTapDisabledByUserInput):
             Q.CGEventTapEnable(self.tap, True)
             return event
         if Q.CGEventGetIntegerValueField(event, Q.kCGEventSourceUserData) == MAGIC:
             return event
-        if etype == SYSTEM_DEFINED:
-            self.note_media(event)
-            return event  # only observed, never swallowed
         kc = Q.CGEventGetIntegerValueField(event, Q.kCGKeyboardEventKeycode)
         if etype == Q.kCGEventKeyUp:
             if kc in self.swallow_up:
@@ -243,7 +224,7 @@ class Agent:
         return None
 
     def run(self):
-        mask = Q.CGEventMaskBit(Q.kCGEventKeyDown) | Q.CGEventMaskBit(Q.kCGEventKeyUp) | Q.CGEventMaskBit(SYSTEM_DEFINED)
+        mask = Q.CGEventMaskBit(Q.kCGEventKeyDown) | Q.CGEventMaskBit(Q.kCGEventKeyUp)
         self.tap = Q.CGEventTapCreate(Q.kCGSessionEventTap, Q.kCGHeadInsertEventTap,
                                       Q.kCGEventTapOptionDefault, mask, self.callback, None)
         if self.tap is None:
