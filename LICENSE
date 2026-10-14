@@ -2,7 +2,7 @@ MIT License
 
 Copyright (c) 2026 Donghyun Kim
 
-Portions of macropad.py (the CH57x "ch57x-1" protocol encoding, key and media
+Portions of macropad.py and ui/ch57x.js (the CH57x "ch57x-1" protocol encoding, key and media
 code tables, and expression syntax) are ported from ch57x-keyboard-tool:
 
 Copyright (c) 2023 Mikhail Trishchenkov

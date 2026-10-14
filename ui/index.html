@@ -69,7 +69,13 @@ svg.i { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width:
 .app { display: flex; align-items: center; gap: 9px; margin-right: auto; font-weight: 600; font-size: 13px; }
 .app-icon { width: 22px; height: 22px; border-radius: 5.5px; background: linear-gradient(180deg, #5ac8fa, #007aff); display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 5px; box-shadow: 0 .5px 1px rgba(0,0,0,.25); }
 .app-icon i { background: rgba(255,255,255,.95); border-radius: 1.5px; }
-.status { display: flex; align-items: center; gap: 6px; color: var(--label-2); font-size: 12px; }
+.status { display: flex; align-items: center; gap: 6px; color: var(--label-2); font-size: 12px; border: 0; background: none; padding: 4px 6px; border-radius: 6px; font-family: inherit; }
+.status.link { cursor: pointer; color: var(--blue); }
+.status.link:hover { background: var(--fill-2); }
+.menu-pop hr { border: 0; border-top: 1px solid var(--sep, rgba(127,127,127,.25)); margin: 5px 8px; }
+.menu-pop a { display: block; padding: 4px 10px; border-radius: 5px; font-size: 13px; line-height: 20px; color: inherit; text-decoration: none; }
+.menu-pop a:hover { background: var(--blue); color: #fff; }
+.opt:disabled { opacity: .45; cursor: default; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--label-3); }
 .dot.on { background: var(--green); }
 .dot.off { background: var(--red); }
@@ -178,6 +184,19 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: c
 /* grouped forms (System Settings style) */
 .forms { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 @media (max-width: 760px) { .forms { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  .toolbar { flex-wrap: wrap; row-gap: 8px; height: auto; padding-top: 8px; padding-bottom: 8px; }
+  .canvas { padding: 16px; }
+  .stage { padding: 18px 10px; }
+  .device { flex-direction: column; align-items: center; }
+  .keys { grid-template-columns: repeat(var(--cols), minmax(0, 68px)); grid-auto-rows: 68px; gap: 7px; }
+  .knobs { flex-direction: row; gap: 10px; }
+  .knob { grid-template-columns: 44px 56px 44px; column-gap: 4px; }
+  .knob .crown { width: 56px; height: 56px; }
+  .turn .t { display: none; }
+  .ins-in { padding: 16px; }
+  .key .legend { font-size: 10.5px; }
+}
 .sec-h { font-size: 13px; font-weight: 600; margin: 0 0 7px 2px; display: flex; justify-content: space-between; align-items: baseline; }
 .sec-h small { font-weight: 400; color: var(--label-2); font-size: 12px; }
 .group { background: var(--content); border-radius: 10px; box-shadow: var(--shadow-1); overflow: hidden; }
@@ -316,8 +335,8 @@ dialog::backdrop { background: rgba(0,0,0,.18); }
 
 <div class="toolbar">
   <div class="app"><span class="app-icon"><i></i><i></i><i></i><i></i></span>Macropad Studio</div>
-  <div class="status" id="devStatus"><span class="dot"></span></div>
-  <span class="divider"></span>
+  <button class="status" id="devStatus"><span class="dot"></span></button>
+  <span class="divider" id="agentDivider"></span>
   <button class="switch-row" id="agentToggle" role="switch" aria-checked="false">
     <span class="switch"></span><span data-t="agent.name"></span>
   </button>
@@ -328,7 +347,13 @@ dialog::backdrop { background: rgba(0,0,0,.18); }
     <div class="menu-pop" id="menuPop">
       <button id="helpBtn" data-t="menu.help"></button>
       <button id="previewBtn" data-t="menu.packets"></button>
+      <hr>
+      <button id="exportBtn" data-t="menu.export"></button>
+      <button id="importBtn" data-t="menu.import"></button>
+      <hr>
+      <a id="ghLink" href="https://github.com/elniakim/macropad-studio" target="_blank" rel="noopener" data-t="menu.github"></a>
     </div>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
   </div>
   <button class="btn lg" id="uploadBtn"></button>
 </div>
@@ -360,6 +385,7 @@ dialog::backdrop { background: rgba(0,0,0,.18); }
   <div class="sheet-f"><button class="btn primary lg" onclick="helpDlg.close()" data-t="done"></button></div>
 </dialog>
 
+<script src="ch57x.js"></script>
 <script>
 "use strict";
 const $ = (s, el = document) => el.querySelector(s);
@@ -375,6 +401,11 @@ const STR = {
     "gate.title": "Open Macropad Studio from its link",
     "gate.body": "For safety the UI only works with the private link that server.py prints and opens when it starts. Start it again (or copy the link from its output):",
     "agent.name": "Mac agent",
+    "menu.export": "Export mapping…", "menu.import": "Import mapping…", "menu.github": "Source code & Mac app",
+    "imp.ok": "Mapping imported", "imp.okSub": "Review it, then upload.", "imp.fail": "Couldn't import",
+    "web.connect": "Connect keypad", "web.unsupported": "This browser can't talk to USB devices. Open this page in Chrome, Edge or another Chromium-based browser to upload to your keypad.",
+    "web.noDevice": "No keypad selected", "web.agentOnly": "These need the Mac agent, which only ships with the local Mac app. Get it from GitHub (menu ··· → Source code & Mac app).",
+    "web.picked": "Keypad connected", "web.pickedSub": "Press Upload to keypad to write your mapping.",
     "agent.tip": "Runs actions the keypad hardware can't do (typing text, opening apps, shell commands, macros) on this Mac",
     "menu.help": "What the keypad can do…", "menu.packets": "Show USB packets…", "menu.packetsTitle": "USB packets to be sent",
     "done": "Done",
@@ -453,6 +484,11 @@ const STR = {
     "gate.title": "링크로 Macropad Studio를 열어 주세요",
     "gate.body": "보안을 위해 server.py가 시작할 때 출력하고 여는 전용 링크로만 동작해요. 다시 실행하거나 출력된 링크를 복사해 여세요:",
     "agent.name": "맥 에이전트",
+    "menu.export": "매핑 내보내기…", "menu.import": "매핑 가져오기…", "menu.github": "소스 코드 · 맥 앱",
+    "imp.ok": "매핑을 가져왔어요", "imp.okSub": "확인한 뒤 업로드하세요.", "imp.fail": "가져오지 못했어요",
+    "web.connect": "키패드 연결", "web.unsupported": "이 브라우저는 USB 장치에 접근할 수 없어요. 키패드에 업로드하려면 Chrome, Edge 같은 크로미움 계열 브라우저로 여세요.",
+    "web.noDevice": "선택한 키패드가 없어요", "web.agentOnly": "이 기능들은 맥 에이전트가 필요해서 로컬 맥 앱에서만 쓸 수 있어요. GitHub에서 받을 수 있어요 (메뉴 ··· → 소스 코드 · 맥 앱).",
+    "web.picked": "키패드를 연결했어요", "web.pickedSub": "키패드에 업로드를 누르면 매핑이 기록돼요.",
     "agent.tip": "텍스트 입력·앱 열기·쉘·매크로처럼 키패드 하드웨어로는 못 하는 동작을 이 맥에서 대신 실행하는 백그라운드 프로그램이에요",
     "menu.help": "키패드로 할 수 있는 것…", "menu.packets": "전송될 패킷 보기…", "menu.packetsTitle": "전송될 USB 패킷",
     "done": "완료",
@@ -549,6 +585,7 @@ const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catc
 const gate = () => $("#gate").classList.add("on");
 
 async function api(method, path, body) {
+  if (WEB) return webApi(method, path, body);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 20000);
   try {
@@ -564,6 +601,79 @@ async function api(method, path, body) {
     if (e instanceof TypeError) throw new Error(LANG === "ko" ? "서버에 연결할 수 없어요. server.py가 실행 중인지 확인하세요." : "Can't reach the server. Is server.py running?");
     throw e;
   } finally { clearTimeout(timer); }
+}
+
+
+/* ---------- web mode: no server, the browser talks to the keypad over WebHID ---------- */
+// Served by server.py on localhost → local mode (agent, shell, …). Anywhere else (GitHub Pages) → web mode.
+const WEB = new URLSearchParams(location.search).has("web") || !/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname);
+const WEB_STARTER = { rows: 3, columns: 4, knobs: 2, layers: [
+  { led: "backlight white", slots: {
+    b0: { type: "keys", steps: ["cmd-c"] }, b1: { type: "keys", steps: ["cmd-v"] }, b2: { type: "keys", steps: ["cmd-z"] },
+    b3: { type: "keys", steps: ["cmd-shift-z"] }, b4: { type: "keys", steps: ["cmd-shift-4"] }, b5: { type: "keys", steps: ["ctrl-left"] },
+    b6: { type: "keys", steps: ["ctrl-right"] }, b7: { type: "keys", steps: ["ctrl-up"] }, b8: { type: "media", code: "previous" },
+    b9: { type: "media", code: "play" }, b10: { type: "media", code: "next" }, b11: { type: "keys", steps: ["ctrl-cmd-q"] },
+    "k0.ccw": { type: "media", code: "volumedown" }, "k0.press": { type: "media", code: "mute" }, "k0.cw": { type: "media", code: "volumeup" },
+    "k1.ccw": { type: "mouse", action: "wheel", delta: 1 }, "k1.press": { type: "mouse", action: "click", buttons: ["middle"] },
+    "k1.cw": { type: "mouse", action: "wheel", delta: -1 } } },
+  { led: "backlight blue", slots: {} }, { led: "backlight purple", slots: {} }] };
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const HID_IDS = CH57X.SUPPORTED_IDS;
+const isKeypad = d => HID_IDS.some(([v, p]) => d.vendorId === v && d.productId === p) && d.collections.some(c => c.usagePage === 0xff00);
+const grantedKeypads = async () => navigator.hid ? (await navigator.hid.getDevices()).filter(isKeypad) : [];
+async function requestKeypad() {
+  if (!navigator.hid) throw new Error(t("web.unsupported"));
+  const picked = await navigator.hid.requestDevice({ filters: HID_IDS.map(([vendorId, productId]) => ({ vendorId, productId, usagePage: 0xff00 })) });
+  if (!picked.length) throw Object.assign(new Error("cancelled"), { name: "NotFoundError" });   // chooser dismissed
+  const d = picked.find(isKeypad);
+  if (!d) throw new Error(t("web.noDevice"));
+  return d;
+}
+function outputLength(d, id) {
+  for (const c of d.collections) for (const r of c.outputReports || [])
+    if (r.reportId === id) return r.items.reduce((n, i) => n + i.reportSize * i.reportCount, 0) / 8;
+  return 63;
+}
+async function hidSend(packets) {
+  const d = (await grantedKeypads())[0] || await requestKeypad();
+  if (!d.opened) await d.open();
+  try {
+    const len = outputLength(d, 3);
+    for (const p of packets) {
+      const buf = new Uint8Array(len);
+      buf.set(p.subarray(1, 1 + len));
+      await d.sendReport(p[0], buf);   // p[0] is the report id (3)
+    }
+  } finally { await d.close(); }
+}
+const webErrors = m => CH57X.slotErrors(m, { agent: false });
+const hexLines = ps => ps.map(p => { let n = p.length; while (n > 1 && !p[n - 1]) n--; return [...p.subarray(0, n)].map(b => b.toString(16).padStart(2, "0")).join(" "); });
+async function webApi(method, path, body) {
+  const route = `${method} ${path}`;
+  if (route === "GET /api/state") {
+    let mapping = store.get("macropad-draft"), warning = null;
+    try { mapping = mapping ? CH57X.normalizeMapping(mapping) : structuredClone(WEB_STARTER); }
+    catch (e) { warning = `Saved draft is invalid (${e.message}); showing the starter mapping`; mapping = structuredClone(WEB_STARTER); }
+    const C = CH57X;
+    return { mapping, uploaded: store.get("macropad-uploaded"), warning, errors: webErrors(mapping),
+      catalog: { modifiers: ["ctrl", "shift", "alt", "cmd", "rctrl", "rshift", "ralt", "rcmd"], keys: Object.keys(C.KEYS),
+        media: Object.keys(C.MEDIA).filter(k => k !== "prev"), led_modes: Object.keys(C.LED_MODES), led_colors: Object.keys(C.LED_COLORS),
+        limits: { layers: 3, max_steps: 18, max_delay: 6000, software_slots: C.MAX_SOFTWARE_SLOTS } } };
+  }
+  if (route === "PUT /api/mapping") { const m = CH57X.normalizeMapping(body); store.set("macropad-draft", m); return { errors: webErrors(m) }; }
+  if (route === "GET /api/status") return { devices: (await grantedKeypads()).map(d => ({ name: d.productName, id: `${d.vendorId.toString(16)}:${d.productId.toString(16)}` })), agent: { running: false } };
+  if (route === "GET /api/apps") return [];
+  if (route === "POST /api/preview") { const c = CH57X.compileMapping(body); return { packets: hexLines(c.packets), hardware: c.hardware, software: 0 }; }
+  if (route === "POST /api/upload") {
+    const c = CH57X.compileMapping(body);   // throws before the chooser opens if the mapping is invalid
+    await hidSend(c.packets);
+    store.set("macropad-uploaded", CH57X.normalizeMapping(body));
+    return { packets: c.packets.length, hardware: c.hardware, software: 0 };
+  }
+  throw new Error(t("web.agentOnly"));
 }
 
 /* SF Symbols-style line icons */
@@ -718,6 +828,9 @@ function renderStatus() {
   $("#devStatus").innerHTML = S.devices === null ? `<span class="dot"></span>${esc(t("dev.checking"))}`
     : d ? `<span class="dot on"></span>${esc(t("dev.on"))}` : `<span class="dot off"></span>${esc(t("dev.off"))}`;
   $("#devStatus").title = d ? `${d.name} (${d.id})` : "";
+  const connect = WEB && S.devices !== null && !d;
+  $("#devStatus").classList.toggle("link", connect);
+  if (connect) $("#devStatus").innerHTML = `<span class="dot off"></span>${esc(t("web.connect"))}`;
   $("#agentToggle").setAttribute("aria-checked", !!S.agent.running);
 }
 
@@ -818,7 +931,7 @@ function renderUsage() {
         <div class="cells">${rows.map(r => `<div class="r" style="grid-template-columns:repeat(${names.length},1fr)">${r.map(c => `<i class="${c}"></i>`).join("")}</div>`).join("")}</div>
       </div>
       <div class="row"><span class="cat dev"></span><span class="k">${esc(t("usage.dev"))}</span><span class="v">${dev}</span></div>
-      <div class="row"><span class="cat agt"></span><span class="k">${esc(t("usage.agt"))}</span><span class="v">${agt} / ${num(S.catalog.limits.software_slots)}</span></div>
+      ${WEB && !agt ? "" : `<div class="row"><span class="cat agt"></span><span class="k">${esc(t("usage.agt"))}</span><span class="v">${agt} / ${num(S.catalog.limits.software_slots)}</span></div>`}
     </div>`;
 }
 
@@ -874,8 +987,9 @@ function renderPicker(body, a) {
       <div class="group">${["keys", "media", "mouse", "raw"].map(opt).join("")}</div></div>
     <div><div class="sec-h">${esc(t("pick.agt"))} <small>${esc(t("pick.agtSub"))}</small></div>
       <div class="group">${["text", "open", "shell", "macro"].map(opt).join("")}</div>
-      <div class="footer">${esc(t("pick.agtFooter"))}</div></div>
+      <div class="footer">${esc(t(WEB ? "web.agentOnly" : "pick.agtFooter"))}</div></div>
     ${a && TYPE_LIST.includes(a.type) ? `<div><button class="btn lg" id="cancelPick">${esc(t("cancel"))}</button></div>` : ""}`;
+  if (WEB) $$(".opt", body).forEach(b => { if (!DEV.has(b.dataset.t)) b.disabled = true; });
   $$(".opt", body).forEach(b => b.onclick = () => {
     const ty = b.dataset.t;
     S.picking = false;
@@ -986,6 +1100,7 @@ function edRaw(body, a) {
 
 /* agent editors */
 function testButton(body, a) {
+  if (WEB) return;
   const wrap = document.createElement("div");
   wrap.innerHTML = `<button class="btn lg">${esc(t("test"))}</button><div class="footer" style="margin-left:2px">${esc(t("test.hint"))}</div>`;
   $("button", wrap).onclick = async () => {
@@ -1126,8 +1241,30 @@ $("#uploadBtn").onclick = async () => {
     S.uploaded = structuredClone(S.mapping);
     toast(t("up.ok"), t("up.okSub", { hw: r.hardware, sw: r.software }), "ok");
     if (r.software && !S.agent.running) toast(t("up.agentOff"), t("up.agentOffSub"));
-  } catch (e) { if (e.message !== "unauthorized") toast(t("up.fail"), e.message, "err"); }
+  } catch (e) { if (e.message !== "unauthorized" && e.name !== "NotFoundError") toast(t("up.fail"), e.message, "err"); }
   S.uploading = false; renderUpload();
+  if (WEB) poll();
+};
+$("#devStatus").onclick = async () => {
+  if (!$("#devStatus").classList.contains("link")) return;
+  try { await requestKeypad(); toast(t("web.picked"), t("web.pickedSub"), "ok"); await poll(); }
+  catch (e) { if (e.name !== "NotFoundError") toast(t("up.fail"), e.message, "err"); }
+};
+$("#exportBtn").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(S.mapping, null, 2) + "\n"], { type: "application/json" }));
+  a.download = "macropad-mapping.json"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$("#importBtn").onclick = () => $("#importFile").click();
+$("#importFile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try {
+    S.mapping = CH57X.normalizeMapping(JSON.parse(await f.text()));
+    S.layer = 0; S.sel = "b0"; S.picking = false;
+    changed(); toast(t("imp.ok"), t("imp.okSub"), "ok");
+  } catch (err) { toast(t("imp.fail"), err.message, "err"); }
 };
 const menuPop = $("#menuPop");
 $("#menuBtn").onclick = e => { e.stopPropagation(); menuPop.classList.toggle("open"); };
@@ -1176,18 +1313,25 @@ async function poll() {
 }
 
 (async function init() {
+  if (WEB) {
+    $("#agentToggle").style.display = "none"; $("#agentDivider").style.display = "none";
+    if (!navigator.hid) { $("#banner").textContent = t("web.unsupported"); $("#banner").classList.add("on"); }
+    navigator.hid?.addEventListener("connect", poll);
+    navigator.hid?.addEventListener("disconnect", poll);
+  }
   renderStatus();
-  if (!token()) return gate();
+  if (!WEB && !token()) return gate();
   let st;
   try { st = await api("GET", "/api/state"); } catch (e) { if (e.message !== "unauthorized") toast(t("save.fail"), e.message, "err"); return; }
   Object.assign(S, { mapping: st.mapping, uploaded: st.uploaded, errors: st.errors, catalog: st.catalog });
   for (const l of S.mapping.layers) l.slots ??= {};
   if (st.warning) { $("#banner").textContent = st.warning; $("#banner").classList.add("on"); }
+  if (!WEB) setInterval(poll, 1500);
   const dl = document.createElement("datalist"); dl.id = "keyList";
   dl.innerHTML = [...S.catalog.keys, ...S.catalog.modifiers].map(k => `<option value="${esc(k)}">`).join("");
   document.body.append(dl);
   changed({ save: false });
-  await poll(); setInterval(poll, 1500);
+  await poll();
 })();
 </script>
 </body>

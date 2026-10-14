@@ -1,10 +1,13 @@
 # Macropad Studio
 
-A macOS configurator for the cheap **CH57x-based macro keypads** sold on AliExpress and Amazon
+A configurator for the cheap **CH57x-based macro keypads** sold on AliExpress and Amazon
 (12 keys + 2 knobs, USB ID `1189:8840`, and relatives). The vendor software is Windows-only and
-can't even show you the current mapping. Macropad Studio gives you a native-feeling editor, a key
-recorder, and a small background agent that lets a key do things the keypad hardware can't —
-type any text, open apps, run shell commands, or play back multi-step macros.
+can't even show you the current mapping. Macropad Studio gives you a native-feeling editor and a key
+recorder — and on a Mac, a small background agent that lets a key do things the keypad hardware
+can't: type any text, open apps, run shell commands, or play back multi-step macros.
+
+**[Open the web app →](https://elniakim.github.io/macropad-studio/)** Nothing to install: plug in the
+keypad, open the page in Chrome or Edge (macOS, Windows, Linux, ChromeOS) and upload.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
@@ -23,13 +26,28 @@ type any text, open apps, run shell commands, or play back multi-step macros.
 - Light and dark mode; English and Korean UI (follows your browser language).
 - A CLI that reads the original tool's YAML format.
 
-## Requirements
+## Web app or Mac app?
+
+| | [Web app](https://elniakim.github.io/macropad-studio/) | Mac app (this repo) |
+|---|---|---|
+| Install | None | Python + `pip install` |
+| OS | Any, in Chrome / Edge / other Chromium browsers | macOS |
+| Keys, media, mouse, LEDs, layers | ✓ | ✓ |
+| Text, open apps/URLs, shell, multi-step macros | — | ✓ (Mac agent) |
+| Where your mapping is kept | This browser (export/import as JSON) | `state/` in the repo folder |
+
+Both use the same editor and the same encoder, and **Export / Import mapping** in the ··· menu moves
+a mapping between them. The web app talks to the keypad with [WebHID](https://developer.mozilla.org/docs/Web/API/WebHID_API):
+Chrome asks you to pick the keypad once, and the page can only reach the device you picked. Safari
+and Firefox don't support WebHID.
+
+## Requirements (Mac app)
 
 - macOS (tested on macOS 26, Apple silicon) and Python 3.10+
 - A keypad that speaks the "ch57x-1" protocol: `1189:8840`, `1189:8842`, `1189:8850` or `514c:8851`.
   Run `python macropad.py list` to check.
 
-## Quick start
+## Quick start (Mac app)
 
 ```sh
 git clone https://github.com/elniakim/macropad-studio.git
@@ -117,7 +135,8 @@ ui/index.html ──JSON──▶ server.py ──compile──▶ macropad.py �
 |---|---|
 | `macropad.py` | Protocol encoder, expression parser, mapping schema and compiler, CLI |
 | `server.py` | Local web server and JSON API |
-| `ui/index.html` | The editor — one file, no build step |
+| `ui/index.html` | The editor — one file, no build step. Local mode on `127.0.0.1`, WebHID mode anywhere else |
+| `ui/ch57x.js` | The encoder ported to JavaScript for the web app; tests check it matches `macropad.py` byte for byte |
 | `agent.py` | Runs agent actions when trigger chords arrive |
 | `state/` | Your draft, the last uploaded mapping and the API token (git-ignored) |
 
@@ -128,15 +147,17 @@ ui/index.html ──JSON──▶ server.py ──compile──▶ macropad.py �
 .venv/bin/python -m pytest -q
 ```
 
-The tests check the encoder byte-for-byte against the original tool's test vectors, plus the schema,
-the trigger-chord rules and the agent's text chunking. `MACROPAD_STATE` and `MACROPAD_PORT`
+The tests check the encoder byte-for-byte against the original tool's test vectors, check that the
+JavaScript encoder produces exactly the same bytes as the Python one (needs `node`), and cover the
+schema, the trigger-chord rules and the agent's text chunking. To try the web mode locally, serve
+`ui/` with any static server and open `index.html?web`. `MACROPAD_STATE` and `MACROPAD_PORT`
 let you run a second instance against a scratch state directory.
 
 ## Credits
 
 The keypad protocol was reverse-engineered by
 [kriomant/ch57x-keyboard-tool](https://github.com/kriomant/ch57x-keyboard-tool) (MIT). The encoder in
-`macropad.py` is a Python port of its `ch57x-1` (k884x) driver; see [`LICENSE`](LICENSE).
+`macropad.py` and `ui/ch57x.js` are ports of its `ch57x-1` (k884x) driver; see [`LICENSE`](LICENSE).
 
 ## License
 

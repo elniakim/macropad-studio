@@ -27,6 +27,7 @@ AGENT_STATUS = STATE / "agent.json"
 AGENT_LOG = STATE / "agent.log"
 TOKEN_FILE = STATE / "token"
 UI_FILE = ROOT / "ui" / "index.html"
+UI_JS = ROOT / "ui" / "ch57x.js"
 PORT = int(os.environ.get("MACROPAD_PORT", "8757"))
 
 STARTER = {
@@ -264,7 +265,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.handle_method(False, {
-            "/": self.get_ui, "/index.html": self.get_ui,
+            "/": self.get_ui, "/index.html": self.get_ui, "/ch57x.js": self.get_js,
             "/api/state": self.get_state, "/api/status": self.get_status, "/api/apps": self.get_apps,
         })
 
@@ -281,6 +282,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_ui(self):
         self.reply(200, UI_FILE.read_bytes(), "text/html; charset=utf-8")
+
+    def get_js(self):
+        self.reply(200, UI_JS.read_bytes(), "text/javascript; charset=utf-8")
 
     def get_state(self):
         mapping, warning = load_mapping()
