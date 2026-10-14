@@ -7,7 +7,11 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const num = (v, d = 0) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
 
 /* ---------- i18n ---------- */
-const LANG = (navigator.language || "en").toLowerCase().startsWith("ko") ? "ko" : "en";
+const LANG_KEY = "macropad-studio/lang";
+const LANG = (() => {
+  try { const v = localStorage.getItem(LANG_KEY); if (v === "en" || v === "ko") return v; } catch {}
+  return (navigator.language || "en").toLowerCase().startsWith("ko") ? "ko" : "en";
+})();
 document.documentElement.lang = LANG;
 const STR = {
   en: {
@@ -23,6 +27,7 @@ const STR = {
     "agent.tip": "Runs actions the keypad hardware can't do (typing text, opening apps, shell commands, macros) on this Mac",
     "menu.help": "What the keypad can do…", "menu.packets": "Show USB packets…", "menu.packetsTitle": "USB packets to be sent",
     "done": "Done",
+    "hit.hint": "Press a keypad key to check it", "hit.pressed": "Pressed: {where}",
     "dev.on": "Keypad connected", "dev.off": "Keypad not connected", "dev.checking": "Looking for keypad",
     "up.errors": "{n} errors", "up.dirty": "Upload to keypad", "up.synced": "Uploaded", "up.busy": "Uploading…",
     "up.tipErr": "Fix the slots marked in red first", "up.tipDirty": "Write your changes to the keypad", "up.tipSynced": "The keypad matches this mapping. Click to upload again",
@@ -107,6 +112,7 @@ const STR = {
     "agent.tip": "텍스트 입력·앱 열기·쉘·매크로처럼 키패드 하드웨어로는 못 하는 동작을 이 맥에서 대신 실행하는 백그라운드 프로그램이에요",
     "menu.help": "키패드로 할 수 있는 것…", "menu.packets": "전송될 패킷 보기…", "menu.packetsTitle": "전송될 USB 패킷",
     "done": "완료",
+    "hit.hint": "키패드 키를 눌러 확인해 보세요", "hit.pressed": "눌림: {where}",
     "dev.on": "키패드 연결됨", "dev.off": "키패드 연결 안 됨", "dev.checking": "키패드 확인 중",
     "up.errors": "오류 {n}개", "up.dirty": "키패드에 업로드", "up.synced": "업로드됨", "up.busy": "업로드 중…",
     "up.tipErr": "빨간색으로 표시된 칸을 먼저 고쳐주세요", "up.tipDirty": "바뀐 내용을 키패드에 씁니다", "up.tipSynced": "키패드와 같은 상태예요. 눌러서 다시 올릴 수도 있어요",
@@ -398,7 +404,7 @@ function legendHTML(a) {
 }
 
 /* ---------- state ---------- */
-let S = { mapping: null, uploaded: null, errors: {}, catalog: null, layer: 0, sel: "b0", clip: null, apps: [], agent: {}, devices: null, lastFlash: 0, picking: false, uploading: false };
+let S = { mapping: null, uploaded: null, errors: {}, catalog: null, layer: 0, sel: "b0", clip: null, apps: [], agent: {}, devices: null, lastFlash: 0, hit: null, picking: false, uploading: false };
 const L = () => S.mapping.layers[S.layer];
 const cur = () => L().slots[S.sel];
 const nButtons = () => num(S.mapping.rows) * num(S.mapping.columns);
@@ -413,19 +419,21 @@ function deviceView(m) {
 }
 const isDirty = () => deviceView(S.mapping) !== deviceView(S.uploaded);
 
-let saveTimer;
+let saveTimer, savePending = null;
 function changed({ inspector = true, save = true } = {}) {
   renderLayers(); renderDevice(); renderUsage(); renderUpload();
   if (inspector) { renderLayerPanel(); renderInspector(); }
   if (!save) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
+  savePending = async () => {
+    savePending = null;
     try {
       const r = await api("PUT", "/api/mapping", S.mapping);
       S.errors = r.errors;
       renderDevice(); renderUpload(); renderErrorNote();
     } catch (e) { if (e.message !== "unauthorized") toast(t("save.fail"), e.message, "err"); }
-  }, 250);
+  };
+  saveTimer = setTimeout(savePending, 250);
 }
 function setSlot(a) { if (a) L().slots[S.sel] = a; else delete L().slots[S.sel]; }
 function select(name) { S.sel = name; S.picking = false; renderDevice(); renderInspector(); }
@@ -449,6 +457,7 @@ function renderStatus() {
   $("#devStatus").classList.toggle("link", connect);
   if (connect) $("#devStatus").innerHTML = `<span class="dot off"></span>${esc(t("web.connect"))}`;
   $("#agentToggle").setAttribute("aria-checked", !!S.agent.running);
+  renderHit();
 }
 
 /* ---------- device ---------- */
@@ -848,6 +857,52 @@ function recorder(btn, onAccord) {
   };
 }
 
+/* ---------- live key test ---------- */
+// The keypad types like a keyboard, so a press that reaches this page is matched against the mapping on the keypad.
+// Agent slots are swallowed by the agent before the page sees them; those arrive through poll() instead.
+const MEDIA_CODES = { AudioVolumeUp: "volumeup", AudioVolumeDown: "volumedown", AudioVolumeMute: "mute", MediaPlayPause: "play", MediaTrackNext: "next", MediaTrackPrevious: "previous", MediaStop: "stop" };
+const accordId = step => { try { const [m, c] = CH57X.parseAccord(String(step).trim().toLowerCase()); return c ? `${(m | (m >> 4)) & 0x0f}:${c}` : null; } catch { return null; } };
+let hitQuiet = 0, hitFade;
+function renderHit() {
+  const el = $("#hitStatus");
+  const h = S.hit;
+  el.textContent = h ? t("hit.pressed", { where: h.where }) : S.devices?.length && S.uploaded ? t("hit.hint") : "";
+  el.title = h ? h.where : "";
+}
+function showHit(layer, slot) {
+  const l = S.uploaded?.layers?.[layer], a = l?.slots?.[slot];
+  if (!a) return;
+  S.hit = { layer, slot, where: `${layerName(l, layer)} · ${slotTitle(slot)} · ${label(a)}` };
+  renderHit();
+  const st = $("#hitStatus");
+  st.classList.add("fresh"); clearTimeout(hitFade); hitFade = setTimeout(() => st.classList.remove("fresh"), 3000);
+  const el = layer === S.layer ? $(`#device [data-slot="${slot}"]`) : $(`#layers button[data-i="${layer}"]`);
+  if (el) { el.classList.remove("hit"); void el.offsetWidth; el.classList.add("hit"); }
+}
+window.addEventListener("keydown", e => {
+  if (activeRec || e.repeat || !S.uploaded || MOD_CODES[e.code]) return;
+  if (e.target.closest?.("input, textarea, select, [contenteditable]") || $("dialog[open]")) return;
+  if (performance.now() < hitQuiet) return;
+  const media = MEDIA_CODES[e.code], key = codeToKey(e.code);
+  const mods = (e.ctrlKey ? 1 : 0) | (e.shiftKey ? 2 : 0) | (e.altKey ? 4 : 0) | (e.metaKey ? 8 : 0);
+  const id = key && accordId([...sortMods(new Set([e.ctrlKey && "ctrl", e.shiftKey && "shift", e.altKey && "alt", e.metaKey && "cmd"].filter(Boolean))), key].join("-"));
+  if (!media && !id) return;
+  const hits = [];
+  S.uploaded.layers.forEach((l, li) => Object.entries(l.slots || {}).forEach(([n, a]) => {
+    if (media ? a.type === "media" && (CH57X.MEDIA[a.code] ?? a.code) === CH57X.MEDIA[media] : a.type === "keys" && accordId(a.steps?.[0]) === id) hits.push([li, n, a]);
+  }));
+  if (!hits.length) return;
+  // The keypad's active layer is unknown: prefer the layer on screen, then the layer of the previous press.
+  const rank = li => li === S.layer ? 0 : li === S.hit?.layer ? 1 : 2;
+  hits.sort((x, y) => rank(x[0]) - rank(y[0]));
+  const [li, n, a] = hits[0];
+  // Ignore the rest of a multi-step sequence so its later steps aren't read as other keys.
+  const steps = a.type === "keys" ? a.steps.length : 1;
+  hitQuiet = performance.now() + 150 + (steps - 1) * (num(a.delay) + 40);
+  if (mods) e.preventDefault();  // e.g. ⌘S or ⌘P shouldn't open the browser's dialogs while testing
+  showHit(li, n);
+});
+
 /* ---------- toolbar actions ---------- */
 $("#uploadBtn").onclick = async () => {
   if (activeRec) activeRec.stop();
@@ -900,6 +955,16 @@ $("#importFile").onchange = async e => {
     changed(); toast(t("imp.ok"), t("imp.okSub"), "ok");
   } catch (err) { toast(t("imp.fail"), err.message, "err"); }
 };
+// Language switch: labelled in the language it switches to; saves any pending edit, then reloads.
+const langBtn = $("#langBtn");
+langBtn.textContent = LANG === "ko" ? "English" : "한국어";
+langBtn.lang = LANG === "ko" ? "en" : "ko";
+langBtn.onclick = async () => {
+  clearTimeout(saveTimer);
+  if (savePending) await savePending();
+  try { localStorage.setItem(LANG_KEY, LANG === "ko" ? "en" : "ko"); } catch {}
+  location.reload();
+};
 const menuPop = $("#menuPop");
 $("#menuBtn").onclick = e => { e.stopPropagation(); menuPop.classList.toggle("open"); };
 document.addEventListener("click", () => menuPop.classList.remove("open"));
@@ -937,10 +1002,7 @@ async function poll() {
     if (was !== S.agent.running && cur() && !DEV.has(cur().type) && !S.picking && !document.activeElement?.closest(".inspector")) renderInspector();
     const last = S.agent.last;
     if (last && num(last.at) > S.lastFlash) {
-      if (S.lastFlash && last.layer === S.layer && slotNames().includes(last.slot)) {
-        const el = $(`[data-slot="${last.slot}"]`);
-        if (el) { el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 600); }
-      }
+      if (S.lastFlash) showHit(last.layer, last.slot);
       S.lastFlash = num(last.at);
     }
   } catch { S.devices = []; renderStatus(); }

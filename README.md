@@ -21,11 +21,13 @@ keypad, open the page in Chrome or Edge (macOS, Windows, Linux, ChromeOS) and up
 - **Visual editor** for all 3 layers: 12 keys and 2 knobs (turn left, press, turn right). Drag keys to
   swap them, copy and paste slots, and set each layer's LED mode and colour.
 - **Key recorder** — press a shortcut on your keyboard and it's captured.
+- **Live key test** — press a key on the keypad and the editor lights up the slot that fired and
+  shows it in the toolbar (needs the editor window in front; agent slots show up while the agent runs).
 - **Everything the hardware supports**: key sequences, media keys, mouse click/scroll/move/drag, and
   the original tool's expression syntax for power users.
 - **Agent actions** for what the hardware can't do (see below): type any Unicode text (emoji,
   Korean, …), open apps, URLs and files, run shell commands, and macros with per-step waits and repeats.
-- Light and dark mode; English and Korean UI (follows your browser language).
+- Light and dark mode; English and Korean UI (follows your browser language; switch in the ··· menu).
 - A CLI that reads the original tool's YAML format.
 
 ## Web app or Mac app?
