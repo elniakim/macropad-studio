@@ -1,5 +1,7 @@
 # Macropad Studio
 
+**English** · [한국어](README.ko.md)
+
 A configurator for the cheap **CH57x-based macro keypads** sold on AliExpress and Amazon
 (12 keys + 2 knobs, USB ID `1189:8840`, and relatives). The vendor software is Windows-only and
 can't even show you the current mapping. Macropad Studio gives you a native-feeling editor and a key
