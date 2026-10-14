@@ -404,7 +404,7 @@ function legendHTML(a) {
 }
 
 /* ---------- state ---------- */
-let S = { mapping: null, uploaded: null, errors: {}, catalog: null, layer: 0, sel: "b0", clip: null, apps: [], agent: {}, devices: null, lastFlash: 0, hit: null, picking: false, uploading: false };
+let S = { mapping: null, uploaded: null, errors: {}, catalog: null, layer: 0, sel: "b0", clip: null, apps: [], agent: {}, devices: null, seenAt: null, hit: null, picking: false, uploading: false };
 const L = () => S.mapping.layers[S.layer];
 const cur = () => L().slots[S.sel];
 const nButtons = () => num(S.mapping.rows) * num(S.mapping.columns);
@@ -887,21 +887,24 @@ window.addEventListener("keydown", e => {
   const mods = (e.ctrlKey ? 1 : 0) | (e.shiftKey ? 2 : 0) | (e.altKey ? 4 : 0) | (e.metaKey ? 8 : 0);
   const id = key && accordId([...sortMods(new Set([e.ctrlKey && "ctrl", e.shiftKey && "shift", e.altKey && "alt", e.metaKey && "cmd"].filter(Boolean))), key].join("-"));
   if (!media && !id) return;
-  const hits = [];
-  S.uploaded.layers.forEach((l, li) => Object.entries(l.slots || {}).forEach(([n, a]) => {
-    if (media ? a.type === "media" && (CH57X.MEDIA[a.code] ?? a.code) === CH57X.MEDIA[media] : a.type === "keys" && accordId(a.steps?.[0]) === id) hits.push([li, n, a]);
-  }));
-  if (!hits.length) return;
-  // The keypad's active layer is unknown: prefer the layer on screen, then the layer of the previous press.
-  const rank = li => li === S.layer ? 0 : li === S.hit?.layer ? 1 : 2;
-  hits.sort((x, y) => rank(x[0]) - rank(y[0]));
-  const [li, n, a] = hits[0];
+  const a = media ? hitMedia(media) : findHit(a => a.type === "keys" && accordId(a.steps?.[0]) === id);
+  if (!a) return;
   // Ignore the rest of a multi-step sequence so its later steps aren't read as other keys.
   const steps = a.type === "keys" ? a.steps.length : 1;
   hitQuiet = performance.now() + 150 + (steps - 1) * (num(a.delay) + 40);
   if (mods) e.preventDefault();  // e.g. ⌘S or ⌘P shouldn't open the browser's dialogs while testing
-  showHit(li, n);
 });
+function findHit(match) {
+  const hits = [];
+  S.uploaded?.layers.forEach((l, li) => Object.entries(l.slots || {}).forEach(([n, a]) => { if (match(a)) hits.push([li, n, a]); }));
+  if (!hits.length) return null;
+  // The keypad's active layer is unknown: prefer the layer on screen, then the layer of the previous press.
+  const rank = li => li === S.layer ? 0 : li === S.hit?.layer ? 1 : 2;
+  hits.sort((x, y) => rank(x[0]) - rank(y[0]));
+  showHit(hits[0][0], hits[0][1]);
+  return hits[0][2];
+}
+const hitMedia = code => findHit(a => a.type === "media" && (CH57X.MEDIA[a.code] ?? a.code) === CH57X.MEDIA[code]);
 
 /* ---------- toolbar actions ---------- */
 $("#uploadBtn").onclick = async () => {
@@ -1000,11 +1003,13 @@ async function poll() {
     S.devices = r.devices; S.agent = r.agent;
     renderStatus();
     if (was !== S.agent.running && cur() && !DEV.has(cur().type) && !S.picking && !document.activeElement?.closest(".inspector")) renderInspector();
-    const last = S.agent.last;
-    if (last && num(last.at) > S.lastFlash) {
-      if (S.lastFlash) showHit(last.layer, last.slot);
-      S.lastFlash = num(last.at);
-    }
+    // Only events newer than the first poll count, so an old press isn't replayed when the page opens.
+    // macOS handles volume and playback keys before the page sees them; the agent reports those.
+    const last = S.agent.last, media = S.agent.media, first = S.seenAt === null;
+    if (first) S.seenAt = Math.max(num(last?.at), num(media?.at));
+    if (!first && last && num(last.at) > S.seenAt) showHit(last.layer, last.slot);
+    if (!first && media && num(media.at) > S.seenAt) hitMedia(media.code);
+    if (!first) S.seenAt = Math.max(S.seenAt, num(last?.at), num(media?.at));
   } catch { S.devices = []; renderStatus(); }
 }
 
@@ -1022,7 +1027,7 @@ async function poll() {
   Object.assign(S, { mapping: st.mapping, uploaded: st.uploaded, errors: st.errors, catalog: st.catalog });
   for (const l of S.mapping.layers) l.slots ??= {};
   if (st.warning) { $("#banner").textContent = st.warning; $("#banner").classList.add("on"); }
-  if (!WEB) setInterval(poll, 1500);
+  if (!WEB) (function loop() { setTimeout(async () => { await poll(); loop(); }, document.hidden ? 3000 : 500); })();
   const dl = document.createElement("datalist"); dl.id = "keyList";
   dl.innerHTML = [...S.catalog.keys, ...S.catalog.modifiers].map(k => `<option value="${esc(k)}">`).join("");
   document.body.append(dl);

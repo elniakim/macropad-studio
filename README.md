@@ -22,7 +22,8 @@ keypad, open the page in Chrome or Edge (macOS, Windows, Linux, ChromeOS) and up
   swap them, copy and paste slots, and set each layer's LED mode and colour.
 - **Key recorder** — press a shortcut on your keyboard and it's captured.
 - **Live key test** — press a key on the keypad and the editor lights up the slot that fired and
-  shows it in the toolbar (needs the editor window in front; agent slots show up while the agent runs).
+  shows it in the toolbar. Key presses need the editor window in front; agent slots and media keys
+  (volume, playback — macOS handles those before the browser) show up while the Mac agent runs.
 - **Everything the hardware supports**: key sequences, media keys, mouse click/scroll/move/drag, and
   the original tool's expression syntax for power users.
 - **Agent actions** for what the hardware can't do (see below): type any Unicode text (emoji,
@@ -159,7 +160,8 @@ The editor can make your Mac run shell commands, so the local server is locked d
 What remains is the point of the feature: a mapping's shell actions run as you. **Only use mappings you
 wrote or trust.** Importing a mapping that contains shell commands or "open" actions shows every one
 of them and asks before accepting it. The agent sees key events in order to catch its trigger chords, but only acts on —
-and only logs — those chords.
+and only logs — those chords. It also notes the last media key pressed (for example "volume up") so the
+editor can show it.
 
 ### Web app
 
